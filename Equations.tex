@@ -1,0 +1,35 @@
+\documentclass{article}
+
+\usepackage{amsmath}
+\usepackage[margin=1in]{geometry}
+
+\begin{document}
+
+We are not able to verify the time-discretisation given in the Cussedu paper.
+So we are trying to derive our own predictor-corrector model. We are trying to
+verify if the conservation principle of BSWP model holds.
+
+\begin{enumerate}
+	\item Implicit-Explicit prediction step for $\mathbf{a}^{n}$:
+		\begin{align}
+			\left(M_{\Gamma} + \tau D_a K_{\Gamma}\right)\tilde{\mathbf{a}}^n =
+			M_{\Gamma}\mathbf{a}^{n-1} + \tau F\left(\mathbf{a}^{n-1},\mathbf{b}^{n-1}\right)
+		\end{align}
+	\item Crank-Nicholson step for $\mathbf{b}^n$:
+		\begin{align}
+			\left[M_{\Omega} + \frac{1}{2}\tau D_b K_{\Omega} + \frac{1}{2}\tau
+			G(\tilde{\mathbf{a}}^{n}) \right]\mathbf{b}^n = \left[M_{\Omega} -
+			\frac{1}{2}\tau D_b K_{\Omega} - \frac{1}{2}\tau
+			G(\mathbf{a}^{n-1})\right]\mathbf{b}^{n-1} + \frac{1}{2}\tau\beta H
+			\tilde{\mathbf{a}}^n + \frac{1}{2}\tau\beta H \mathbf{a}^{n-1}
+		\end{align}
+	\item Crank-Nicholson correction step for $\mathbf{a}^{n}$:
+		\begin{align}
+			\left(M_{\Gamma} + \frac{1}{2}\tau D_aK_{\Gamma}\right)\mathbf{a}^n =
+			\left(M_{\Gamma} - \frac{1}{2}\tau D_a K_{\Gamma}\right)\mathbf{a}^{n-1} +
+			\frac{1}{2}\tau F(\tilde{\mathbf{a}}^n,\mathbf{b}^n) + \frac{1}{2}\tau
+			F(\mathbf{a}^{n-1},\mathbf{b}^{n-1})
+		\end{align}
+\end{enumerate}
+
+\end{document}
