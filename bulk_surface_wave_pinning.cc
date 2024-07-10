@@ -100,7 +100,7 @@ private:
  */
 template <int dim> class InitialValuesA : public Function<dim> {
 public:
-  InitialValuesA<dim>(double al, double ah)
+  InitialValuesA(double al, double ah)
       : Function<dim>(), a_low(al), a_high(ah) {}
 
   virtual double value(const Point<dim> &p,
@@ -135,7 +135,7 @@ private:
  */
 template <int dim> class InitialValuesB : public Function<dim> {
 public:
-  InitialValuesB<dim>(double b) : Function<dim>(), b_initial(b) {}
+  InitialValuesB(double b) : Function<dim>(), b_initial(b) {}
   virtual double value(const Point<dim> &,
                        const unsigned int component = 0) const override {
     (void)component;
