@@ -33,3 +33,9 @@
 
 # The build directory
 build/
+
+# The .cache directory
+.cache/
+
+# The compile commands
+compile_commands.json
