@@ -29,6 +29,7 @@
 
 #include <deal.II/base/table_handler.h>
 
+#include <chrono>
 #include <cmath>
 #include <fstream>
 #include <iostream>
@@ -93,6 +94,16 @@ private:
   double total_time;
   double k0, gamma, K, beta;
 };
+
+/**
+ * A function to calculate time elapsed in milliseconds.
+ */
+template <class result_t = std::chrono::milliseconds,
+          class clock_t = std::chrono::steady_clock,
+          class duration_t = std::chrono::milliseconds>
+auto since(std::chrono::time_point<clock_t, duration_t> const &start) {
+  return std::chrono::duration_cast<result_t>(clock_t::now() - start);
+}
 
 /**
  * This class is used to set the initial concentration of the membrane bound
@@ -180,6 +191,8 @@ WavePinningModel<dim>::WavePinningModel(std::map<std::string, double> params)
  *
  */
 template <int dim> void WavePinningModel<dim>::prepare_grid() {
+  std::cout << "Entering prepare_grid()..." << std::endl;
+  auto startpoint = std::chrono::steady_clock::now();
   // For starters, we will create a hyper_ball.
   Point<dim> center;
   for (unsigned int i = 0; i < dim; ++i) {
@@ -202,6 +215,10 @@ template <int dim> void WavePinningModel<dim>::prepare_grid() {
     }
     bulk_triangulation.execute_coarsening_and_refinement();
   }
+  std::cout << "\tBulk mesh is ready. Time elapsed = "
+            << since(startpoint).count() << " ms." << std::endl;
+
+  startpoint = std::chrono::steady_clock::now();
 
   // Now we will create the surface triangulation from the boundary of the
   // bulk_triangulation
@@ -213,21 +230,22 @@ template <int dim> void WavePinningModel<dim>::prepare_grid() {
         CellData<dim - 1> surf_cell;
         for (const auto &vid : face->vertex_indices()) {
           const Point<dim> point = face->vertex(vid);
-          types::global_vertex_index vertex_index;
-          // Check if this point is already present in the vector
+          types::global_vertex_index surf_vertex_index;
+          // Check if this point is already present in the vector of surface
+          // mesh points
           bool vertex_not_found = true;
           for (unsigned int pid = 0; pid < surf_points.size(); ++pid) {
             if (surf_points[pid].distance(point) < 1e-8) {
-              vertex_index = pid;
+              surf_vertex_index = pid;
               vertex_not_found = false;
               break;
             }
           }
           if (vertex_not_found) {
-            vertex_index = surf_points.size();
+            surf_vertex_index = surf_points.size();
             surf_points.push_back(point);
           }
-          surf_cell.vertices[vid] = vertex_index;
+          surf_cell.vertices[vid] = surf_vertex_index;
         }
         surf_cell.manifold_id = face->manifold_id();
         surf_cell.material_id = cell->material_id();
@@ -238,6 +256,9 @@ template <int dim> void WavePinningModel<dim>::prepare_grid() {
   // Now we can create the surface triangulation using the points and the cell
   // data
   surf_triangulation.create_triangulation(surf_points, cells, SubCellData());
+  std::cout << "\tSurface mesh is also ready. Time taken = "
+            << since(startpoint).count() << " ms." << std::endl;
+  std::cout << "Exiting prepare_grid()." << std::endl;
 }
 
 /**
@@ -355,7 +376,8 @@ void WavePinningModel<dim>::calculate_F(bool previous_timestep) {
  *
  */
 template <int dim> void WavePinningModel<dim>::setup_system() {
-
+  std::cout << "Entering setup_system()..." << std::endl;
+  auto startpoint = std::chrono::steady_clock::now();
   // Distribute the DoFs for both the grids
   dof_handler_bulk.distribute_dofs(fe_bulk);
   dof_handler_surf.distribute_dofs(fe_surf);
@@ -366,24 +388,31 @@ template <int dim> void WavePinningModel<dim>::setup_system() {
   std::map<types::global_dof_index, Point<dim>> dof_point_map_surf =
       DoFTools::map_dofs_to_support_points(MappingQ1<dim - 1, dim>(),
                                            dof_handler_surf);
+  IndexSet boundary_dofs = DoFTools::extract_boundary_dofs(dof_handler_bulk);
 
+  std::cout << "\tPreparing surf_to_bulk_dof_map." << std::endl;
+  startpoint = std::chrono::steady_clock::now();
   // For every DoF in the surface mesh we need to identify the bulk DoF index
   surf_to_bulk_dof_map.resize(dof_handler_surf.n_dofs());
   for (unsigned int i = 0; i < dof_handler_surf.n_dofs(); ++i) {
     Point<dim> surf_point = dof_point_map_surf[i];
-    for (unsigned int j = 0; dof_handler_bulk.n_dofs(); ++j) {
-      Point<dim> bulk_point = dof_point_map_bulk[j];
+    for (const auto &bulk_dof_index : boundary_dofs) {
+      Point<dim> bulk_point = dof_point_map_bulk[bulk_dof_index];
       if (surf_point.distance(bulk_point) < 1e-8) {
         // We found the matching point
-        surf_to_bulk_dof_map[i] = j;
+        surf_to_bulk_dof_map[i] = bulk_dof_index;
         break;
       }
     }
   }
+  std::cout << "\tPrepared surf_to_bulk_dof_map. Time taken = "
+            << since(startpoint).count() << " ms." << std::endl;
 
   // Calculate some repeatedly used numbers
   auto n_dofs = dof_handler_bulk.n_dofs();
   auto n_surf_dofs = dof_handler_surf.n_dofs();
+  std::cout << "\tDoFs in the bulk mesh = " << n_dofs << std::endl;
+  std::cout << "\tDoFs in the surface mesh = " << n_surf_dofs << std::endl;
 
   // Make hanging nodes constraints
   constraints.clear();
@@ -424,6 +453,8 @@ template <int dim> void WavePinningModel<dim>::setup_system() {
   system_rhs_a.reinit(n_surf_dofs);
   system_rhs_b.reinit(n_dofs);
 
+  std::cout << "\tPreparing mass and Laplace matrices." << std::endl;
+  startpoint = std::chrono::steady_clock::now();
   // Let's make the mass matrices and the laplace matrices
   MatrixCreator::create_mass_matrix(dof_handler_bulk, quadrature_bulk,
                                     mass_matrix_bulk);
@@ -434,6 +465,9 @@ template <int dim> void WavePinningModel<dim>::setup_system() {
                                     mass_matrix_surface);
   MatrixCreator::create_laplace_matrix(dof_handler_surf, quadrature_surface,
                                        laplace_matrix_surface);
+  std::cout << "\tMatrices calculated. Time elapsed = "
+            << since(startpoint).count() << " ms." << std::endl;
+  std::cout << "Exiting setup_system()." << std::endl;
 }
 
 /*
@@ -543,9 +577,11 @@ template <int dim> void WavePinningModel<dim>::solve_a() {
  * This function will run the simulation over the time-steps
  */
 template <int dim> void WavePinningModel<dim>::run() {
+  std::cout << "Entering run()..." << std::endl;
   prepare_grid();
   setup_system();
 
+  auto startpoint = std::chrono::steady_clock::now();
   // Set the initial values of a
   InitialValuesA<dim> initial_a_values(0.20, 2.35);
   VectorTools::interpolate(dof_handler_surf, initial_a_values, old_solution_a);
@@ -555,6 +591,12 @@ template <int dim> void WavePinningModel<dim>::run() {
   VectorTools::interpolate(dof_handler_bulk, initial_b_values, old_solution_b);
 
   output_results(0, old_solution_a, old_solution_b);
+
+  std::cout << "\tInitial conditions set and written to file. Time elapsed = "
+            << since(startpoint).count() << " ms." << std::endl;
+  std::cout << "\tStarting time-stepping..." << std::endl;
+
+  startpoint = std::chrono::steady_clock::now();
 
   Vector<double> a_old, b_old;
   a_old.reinit(dof_handler_surf.n_dofs());
@@ -574,7 +616,9 @@ template <int dim> void WavePinningModel<dim>::run() {
   // Print the table
   std::ofstream table_file("Conservation.txt");
   table_handler.write_text(table_file);
-  std::cout << "Simulation completed." << std::endl;
+  std::cout << "Simulation completed. Time taken to run = "
+            << since(startpoint).count() << " ms." << std::endl;
+  std::cout << "Exiting run()." << std::endl;
 }
 
 /**
