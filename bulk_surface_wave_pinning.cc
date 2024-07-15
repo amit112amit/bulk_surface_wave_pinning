@@ -381,8 +381,12 @@ template <int dim> void WavePinningModel<dim>::setup_system() {
   // Distribute the DoFs for both the grids
   dof_handler_bulk.distribute_dofs(fe_bulk);
   dof_handler_surf.distribute_dofs(fe_surf);
+  std::cout << "\tDistribution of DoFs completed. Time elapsed = "
+            << since(startpoint).count() << " ms." << std::endl;
 
-  // We need to map the dofs of the surface and the boundary grids
+  std::cout << "\tPreparing surf_to_bulk_dof_map..." << std::endl;
+  startpoint = std::chrono::steady_clock::now();
+
   std::map<types::global_dof_index, Point<dim>> dof_point_map_bulk =
       DoFTools::map_dofs_to_support_points(MappingQ1<dim>(), dof_handler_bulk);
   std::map<types::global_dof_index, Point<dim>> dof_point_map_surf =
@@ -390,8 +394,6 @@ template <int dim> void WavePinningModel<dim>::setup_system() {
                                            dof_handler_surf);
   IndexSet boundary_dofs = DoFTools::extract_boundary_dofs(dof_handler_bulk);
 
-  std::cout << "\tPreparing surf_to_bulk_dof_map." << std::endl;
-  startpoint = std::chrono::steady_clock::now();
   // For every DoF in the surface mesh we need to identify the bulk DoF index
   surf_to_bulk_dof_map.resize(dof_handler_surf.n_dofs());
   for (unsigned int i = 0; i < dof_handler_surf.n_dofs(); ++i) {
