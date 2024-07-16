@@ -5,6 +5,7 @@
 #include <deal.II/base/smartpointer.h>
 #include <deal.II/base/types.h>
 
+#include <deal.II/fe/mapping_q1.h>
 #include <deal.II/lac/affine_constraints.h>
 #include <deal.II/lac/dynamic_sparsity_pattern.h>
 #include <deal.II/lac/precondition.h>
@@ -387,25 +388,33 @@ template <int dim> void WavePinningModel<dim>::setup_system() {
   std::cout << "\tPreparing surf_to_bulk_dof_map..." << std::endl;
   startpoint = std::chrono::steady_clock::now();
 
-  std::map<types::global_dof_index, Point<dim>> dof_point_map_bulk =
-      DoFTools::map_dofs_to_support_points(MappingQ1<dim>(), dof_handler_bulk);
+  auto point_comparator = [](const Point<dim> &a, const Point<dim> &b) {
+    double distance = a.distance(b);
+    if (distance < 1e-8) {
+      return false;
+    }
+    double diff;
+    for (unsigned int i = 0; i < dim; ++i) {
+      diff = a(i) - b(i);
+      if ((diff * diff) > 1e-10) {
+        break;
+      }
+    }
+    return diff > 0;
+  };
+  std::map<Point<dim>, unsigned int, decltype(point_comparator)>
+      point_dof_map_bulk(point_comparator);
+  DoFTools::map_support_points_to_dofs<dim, dim, decltype(point_comparator)>(
+      MappingQ1<dim>(), dof_handler_bulk, point_dof_map_bulk);
   std::map<types::global_dof_index, Point<dim>> dof_point_map_surf =
       DoFTools::map_dofs_to_support_points(MappingQ1<dim - 1, dim>(),
                                            dof_handler_surf);
-  IndexSet boundary_dofs = DoFTools::extract_boundary_dofs(dof_handler_bulk);
 
   // For every DoF in the surface mesh we need to identify the bulk DoF index
   surf_to_bulk_dof_map.resize(dof_handler_surf.n_dofs());
   for (unsigned int i = 0; i < dof_handler_surf.n_dofs(); ++i) {
     Point<dim> surf_point = dof_point_map_surf[i];
-    for (const auto &bulk_dof_index : boundary_dofs) {
-      Point<dim> bulk_point = dof_point_map_bulk[bulk_dof_index];
-      if (surf_point.distance(bulk_point) < 1e-8) {
-        // We found the matching point
-        surf_to_bulk_dof_map[i] = bulk_dof_index;
-        break;
-      }
-    }
+    surf_to_bulk_dof_map[i] = point_dof_map_bulk[surf_point];
   }
   std::cout << "\tPrepared surf_to_bulk_dof_map. Time taken = "
             << since(startpoint).count() << " ms." << std::endl;
